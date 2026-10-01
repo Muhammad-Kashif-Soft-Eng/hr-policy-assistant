@@ -1,4 +1,4 @@
-# HR Policy Assistant — Corrected Streamlit Cloud Version
+# HR Policy Assistant
 
 ## 1. app.py
 
@@ -9,7 +9,6 @@ import re
 
 import numpy as np
 import streamlit as st
-from groq import Groq
 from sentence_transformers import SentenceTransformer
 
 
@@ -21,6 +20,10 @@ CHUNK_SIZE = 220
 CHUNK_OVERLAP = 40
 
 
+# =========================================================
+# PAGE CONFIGURATION
+# =========================================================
+
 st.set_page_config(
     page_title="HR Policy Assistant",
     page_icon="📘",
@@ -28,80 +31,169 @@ st.set_page_config(
 )
 
 
-# ---------------------------------------------------------
-# FAISS
-# ---------------------------------------------------------
-# Import FAISS inside a function instead of at application
-# startup. This makes dependency problems much easier to
-# diagnose on Streamlit Cloud.
-# ---------------------------------------------------------
+# =========================================================
+# FAISS LOADER
+# =========================================================
 
 @st.cache_resource
 def load_faiss():
+
     try:
+
         import faiss
+
         return faiss
+
     except ImportError as exc:
+
         st.error(
-            "FAISS could not be loaded.\n\n"
-            "Make sure:\n"
-            "1. requirements.txt contains faiss-cpu==1.10.0\n"
-            "2. Streamlit Cloud is using Python 3.12\n"
-            "3. You redeploy the application after changing requirements.txt"
+            """
+            FAISS is not installed correctly.
+
+            Please check:
+
+            1. requirements.txt contains:
+               faiss-cpu==1.10.0
+
+            2. Streamlit Cloud is using Python 3.12.
+
+            3. requirements.txt is in the repository root.
+
+            4. You redeployed the application after
+               changing requirements.txt.
+            """
         )
+
         raise exc
 
 
-# ---------------------------------------------------------
-# Groq API key
-# ---------------------------------------------------------
+# =========================================================
+# GROQ LOADER
+# =========================================================
+
+@st.cache_resource
+def load_groq():
+
+    try:
+
+        from groq import Groq
+
+        return Groq
+
+    except ImportError as exc:
+
+        st.error(
+            """
+            The Groq Python package is not installed.
+
+            Make sure requirements.txt contains:
+
+            groq==1.7.0
+
+            Then commit the updated requirements.txt
+            to GitHub and redeploy the Streamlit app.
+            """
+        )
+
+        raise exc
+
+
+# =========================================================
+# API KEY
+# =========================================================
 
 def get_groq_api_key():
+
     try:
-        secret_key = st.secrets.get("GROQ_API_KEY", "")
+
+        secret_key = st.secrets.get(
+            "GROQ_API_KEY",
+            ""
+        )
+
     except Exception:
+
         secret_key = ""
 
-    return secret_key or os.getenv("GROQ_API_KEY", "")
+    return (
+        secret_key
+        or os.getenv("GROQ_API_KEY", "")
+    )
 
 
-# ---------------------------------------------------------
-# Embedding model
-# ---------------------------------------------------------
+# =========================================================
+# EMBEDDING MODEL
+# =========================================================
 
 @st.cache_resource
 def load_embedding_model():
-    return SentenceTransformer(EMBEDDING_MODEL)
+
+    return SentenceTransformer(
+        EMBEDDING_MODEL
+    )
 
 
-# ---------------------------------------------------------
-# Text processing
-# ---------------------------------------------------------
+# =========================================================
+# TEXT NORMALIZATION
+# =========================================================
 
 def normalize_text(text):
-    text = text.replace("\u00a0", " ")
-    text = re.sub(r"\s+", " ", text)
+
+    text = text.replace(
+        "\u00a0",
+        " "
+    )
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    )
+
     return text.strip()
 
 
-def chunk_page_text(text, page_number):
-    words = normalize_text(text).split()
+# =========================================================
+# TEXT CHUNKING
+# =========================================================
+
+def chunk_page_text(
+    text,
+    page_number
+):
+
+    words = normalize_text(
+        text
+    ).split()
 
     if not words:
+
         return []
 
     chunks = []
 
-    step = max(CHUNK_SIZE - CHUNK_OVERLAP, 1)
+    step = max(
+        CHUNK_SIZE - CHUNK_OVERLAP,
+        1
+    )
 
-    for start in range(0, len(words), step):
-        end = min(start + CHUNK_SIZE, len(words))
+    for start in range(
+        0,
+        len(words),
+        step
+    ):
+
+        end = min(
+            start + CHUNK_SIZE,
+            len(words)
+        )
 
         chunk_text = " ".join(
             words[start:end]
         ).strip()
 
         if chunk_text:
+
             chunks.append(
                 {
                     "page": page_number,
@@ -110,16 +202,20 @@ def chunk_page_text(text, page_number):
             )
 
         if end >= len(words):
+
             break
 
     return chunks
 
 
-# ---------------------------------------------------------
-# PDF extraction
-# ---------------------------------------------------------
+# =========================================================
+# PDF EXTRACTION
+# =========================================================
 
-def extract_pdf_chunks(pdf_bytes):
+def extract_pdf_chunks(
+    pdf_bytes
+):
+
     import fitz
 
     chunks = []
@@ -133,28 +229,37 @@ def extract_pdf_chunks(pdf_bytes):
             document,
             start=1
         ):
-            page_text = page.get_text("text")
+
+            page_text = page.get_text(
+                "text"
+            )
 
             page_chunks = chunk_page_text(
                 page_text,
                 page_number
             )
 
-            chunks.extend(page_chunks)
+            chunks.extend(
+                page_chunks
+            )
 
     return chunks
 
 
-# ---------------------------------------------------------
-# FAISS index
-# ---------------------------------------------------------
+# =========================================================
+# FAISS INDEX
+# =========================================================
 
-def build_faiss_index(chunks, model):
+def build_faiss_index(
+    chunks,
+    model
+):
+
     faiss = load_faiss()
 
     texts = [
-        chunk["text"]
-        for chunk in chunks
+        item["text"]
+        for item in chunks
     ]
 
     embeddings = model.encode(
@@ -173,21 +278,23 @@ def build_faiss_index(chunks, model):
         embeddings.shape[1]
     )
 
-    index.add(embeddings)
+    index.add(
+        embeddings
+    )
 
     return index
 
 
-# ---------------------------------------------------------
-# Retrieval
-# ---------------------------------------------------------
+# =========================================================
+# RETRIEVAL
+# =========================================================
 
 def retrieve_chunks(
     question,
     index,
     chunks,
     model,
-    top_k=TOP_K
+    top_k
 ):
 
     query_embedding = model.encode(
@@ -204,7 +311,10 @@ def retrieve_chunks(
 
     scores, positions = index.search(
         query_embedding,
-        min(top_k, len(chunks)),
+        min(
+            top_k,
+            len(chunks)
+        )
     )
 
     results = []
@@ -215,22 +325,31 @@ def retrieve_chunks(
     ):
 
         if position < 0:
+
             continue
 
-        item = chunks[int(position)].copy()
+        item = chunks[
+            int(position)
+        ].copy()
 
-        item["score"] = float(score)
+        item["score"] = float(
+            score
+        )
 
-        results.append(item)
+        results.append(
+            item
+        )
 
     return results
 
 
-# ---------------------------------------------------------
-# Context creation
-# ---------------------------------------------------------
+# =========================================================
+# BUILD CONTEXT
+# =========================================================
 
-def build_context(retrieved_chunks):
+def build_context(
+    retrieved_chunks
+):
 
     context_parts = []
 
@@ -246,14 +365,17 @@ def build_context(retrieved_chunks):
             f"{item['text']}"
         )
 
-    return "\n\n".join(context_parts)
+    return "\n\n".join(
+        context_parts
+    )
 
 
-# ---------------------------------------------------------
-# Structured output schema
-# ---------------------------------------------------------
+# =========================================================
+# STRUCTURED RESPONSE SCHEMA
+# =========================================================
 
 ANSWER_SCHEMA = {
+
     "type": "object",
 
     "properties": {
@@ -299,6 +421,7 @@ ANSWER_SCHEMA = {
                 "Low"
             ],
         },
+
     },
 
     "required": [
@@ -314,15 +437,17 @@ ANSWER_SCHEMA = {
 }
 
 
-# ---------------------------------------------------------
-# Groq
-# ---------------------------------------------------------
+# =========================================================
+# ASK GROQ
+# =========================================================
 
 def ask_groq(
     question,
     context,
     api_key
 ):
+
+    Groq = load_groq()
 
     client = Groq(
         api_key=api_key
@@ -331,22 +456,25 @@ def ask_groq(
     system_prompt = """
 You are an HR Policy Assistant.
 
-Answer questions ONLY from the retrieved excerpts
-of the uploaded HR Policy PDF.
+Answer questions ONLY from the retrieved
+excerpts of the uploaded HR Policy PDF.
 
 Rules:
 
-1. Never invent policies.
-2. Never invent numbers, dates, leave balances,
-   eligibility rules, benefits, deadlines or exceptions.
-3. If the retrieved context does not contain enough
-   information, return NOT_FOUND.
-4. Keep answers clear and practical.
-5. Explain the policy basis supporting the answer.
-6. Mention important caveats only when they exist.
+1. Never invent HR policies.
+2. Never invent numbers, dates,
+   leave balances, benefits,
+   eligibility rules or deadlines.
+3. If the retrieved context does not contain
+   enough information, return NOT_FOUND.
+4. Give a clear direct answer.
+5. Explain which policy information
+   supports the answer.
+6. Mention meaningful caveats.
 7. Do not provide legal advice.
-8. Do not use information outside the provided policy context.
-9. Keep the answer concise but useful.
+8. Do not use information outside
+   the provided policy excerpts.
+9. Keep the response concise.
 """
 
     user_prompt = f"""
@@ -366,11 +494,11 @@ Retrieved policy excerpts:
         messages=[
             {
                 "role": "system",
-                "content": system_prompt.strip()
+                "content": system_prompt.strip(),
             },
             {
                 "role": "user",
-                "content": user_prompt.strip()
+                "content": user_prompt.strip(),
             },
         ],
 
@@ -381,6 +509,7 @@ Retrieved policy excerpts:
         max_completion_tokens=1000,
 
         response_format={
+
             "type": "json_schema",
 
             "json_schema": {
@@ -393,8 +522,11 @@ Retrieved policy excerpts:
 
                 "schema":
                     ANSWER_SCHEMA,
+
             },
+
         },
+
     )
 
     content = (
@@ -405,12 +537,14 @@ Retrieved policy excerpts:
         or "{}"
     )
 
-    return json.loads(content)
+    return json.loads(
+        content
+    )
 
 
-# ---------------------------------------------------------
-# Structured UI
-# ---------------------------------------------------------
+# =========================================================
+# DISPLAY STRUCTURED ANSWER
+# =========================================================
 
 def show_structured_answer(
     answer,
@@ -425,23 +559,24 @@ def show_structured_answer(
     if status == "ANSWERED":
 
         st.success(
-            "Policy answer found in the "
-            "retrieved document context."
+            "Answer generated from "
+            "the retrieved HR policy context."
         )
 
     else:
 
         st.warning(
-            "The retrieved policy context "
-            "does not contain enough information "
-            "to answer this question safely."
+            "The uploaded policy does not contain "
+            "enough information to answer this question."
         )
 
-    # -----------------------------------------
-    # Answer
-    # -----------------------------------------
+    # -----------------------------------------------------
+    # ANSWER
+    # -----------------------------------------------------
 
-    st.subheader("Answer")
+    st.subheader(
+        "Answer"
+    )
 
     st.write(
         answer.get(
@@ -450,9 +585,9 @@ def show_structured_answer(
         )
     )
 
-    # -----------------------------------------
-    # Key points + confidence
-    # -----------------------------------------
+    # -----------------------------------------------------
+    # KEY POINTS / CONFIDENCE
+    # -----------------------------------------------------
 
     left, right = st.columns(2)
 
@@ -494,22 +629,22 @@ def show_structured_answer(
             )
         )
 
-    # -----------------------------------------
-    # Policy basis
-    # -----------------------------------------
+    # -----------------------------------------------------
+    # POLICY BASIS
+    # -----------------------------------------------------
 
     st.markdown(
         "#### Policy Basis"
     )
 
-    basis = answer.get(
+    policy_basis = answer.get(
         "policy_basis",
         []
     )
 
-    if basis:
+    if policy_basis:
 
-        for item in basis:
+        for item in policy_basis:
 
             st.markdown(
                 f"- {item}"
@@ -518,13 +653,12 @@ def show_structured_answer(
     else:
 
         st.write(
-            "No supporting policy basis "
-            "was identified."
+            "No policy basis was identified."
         )
 
-    # -----------------------------------------
-    # Caveats
-    # -----------------------------------------
+    # -----------------------------------------------------
+    # CAVEATS
+    # -----------------------------------------------------
 
     st.markdown(
         "#### Caveats"
@@ -549,9 +683,9 @@ def show_structured_answer(
             "No additional caveats."
         )
 
-    # -----------------------------------------
-    # Sources
-    # -----------------------------------------
+    # -----------------------------------------------------
+    # SOURCES
+    # -----------------------------------------------------
 
     st.markdown(
         "#### Retrieved Sources"
@@ -582,7 +716,9 @@ def show_structured_answer(
                     item["text"][:300]
                     + (
                         "..."
-                        if len(item["text"]) > 300
+                        if len(
+                            item["text"]
+                        ) > 300
                         else ""
                     ),
             }
@@ -596,7 +732,7 @@ def show_structured_answer(
 
 
 # =========================================================
-# APPLICATION
+# MAIN UI
 # =========================================================
 
 st.title(
@@ -609,9 +745,9 @@ st.caption(
 )
 
 
-# ---------------------------------------------------------
-# Sidebar
-# ---------------------------------------------------------
+# =========================================================
+# SIDEBAR
+# =========================================================
 
 with st.sidebar:
 
@@ -636,7 +772,7 @@ with st.sidebar:
     st.divider()
 
     st.markdown(
-        "**Technology Stack**"
+        "**RAG Pipeline**"
     )
 
     st.caption(
@@ -645,7 +781,7 @@ with st.sidebar:
     )
 
     if st.button(
-        "Clear current document",
+        "Clear Current Document",
         use_container_width=True
     ):
 
@@ -666,37 +802,37 @@ with st.sidebar:
         st.rerun()
 
 
-# ---------------------------------------------------------
-# No PDF
-# ---------------------------------------------------------
+# =========================================================
+# EMPTY STATE
+# =========================================================
 
 if uploaded_file is None:
 
     st.info(
-        "Upload an HR Policy PDF from "
-        "the sidebar to begin."
+        "Upload an HR Policy PDF "
+        "from the sidebar."
     )
 
     st.markdown(
         """
-### How it works
+### How It Works
 
-1. PDF text is extracted with PyMuPDF.
-2. Text is divided into overlapping chunks.
-3. Sentence Transformers creates embeddings.
-4. FAISS stores the embeddings.
-5. Relevant policy passages are retrieved.
-6. Groq GPT-OSS 20B generates the answer.
-7. The result is displayed in a structured format.
+1. Extract PDF text with PyMuPDF.
+2. Split text into overlapping chunks.
+3. Create semantic embeddings.
+4. Store embeddings in FAISS.
+5. Retrieve relevant policy sections.
+6. Send retrieved context to Groq.
+7. Display the structured answer.
 """
     )
 
     st.stop()
 
 
-# ---------------------------------------------------------
-# Process PDF
-# ---------------------------------------------------------
+# =========================================================
+# PROCESS PDF
+# =========================================================
 
 pdf_bytes = uploaded_file.getvalue()
 
@@ -775,9 +911,9 @@ if (
             st.stop()
 
 
-# ---------------------------------------------------------
-# Loaded document
-# ---------------------------------------------------------
+# =========================================================
+# DOCUMENT READY
+# =========================================================
 
 chunks = st.session_state[
     "chunks"
@@ -799,9 +935,9 @@ st.success(
 )
 
 
-# ---------------------------------------------------------
-# Question
-# ---------------------------------------------------------
+# =========================================================
+# QUESTION
+# =========================================================
 
 question = st.text_input(
     "Ask a question about the uploaded HR policy",
@@ -819,6 +955,10 @@ ask_clicked = st.button(
 )
 
 
+# =========================================================
+# QUESTION PROCESSING
+# =========================================================
+
 if ask_clicked:
 
     if not question.strip():
@@ -829,16 +969,14 @@ if ask_clicked:
 
         st.stop()
 
-    api_key = (
-        get_groq_api_key()
-    )
+    api_key = get_groq_api_key()
 
     if not api_key:
 
         st.error(
             "GROQ_API_KEY is missing. "
-            "Add it in Streamlit Cloud under "
-            "App Settings → Secrets."
+            "Add it in Streamlit Cloud → "
+            "Settings → Secrets."
         )
 
         st.stop()
@@ -854,7 +992,7 @@ if ask_clicked:
                 faiss_index,
                 chunks,
                 embedding_model,
-                top_k=top_k,
+                top_k
             )
 
             context = build_context(
@@ -864,7 +1002,7 @@ if ask_clicked:
             answer = ask_groq(
                 question.strip(),
                 context,
-                api_key,
+                api_key
             )
 
             st.session_state[
@@ -884,9 +1022,9 @@ if ask_clicked:
             st.stop()
 
 
-# ---------------------------------------------------------
-# Display answer
-# ---------------------------------------------------------
+# =========================================================
+# SHOW RESULT
+# =========================================================
 
 if (
     "last_answer"
