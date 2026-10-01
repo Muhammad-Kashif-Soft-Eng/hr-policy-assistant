@@ -1,6 +1,6 @@
-streamlit>=1.50,<2
+streamlit==1.50.0
+numpy==1.26.4
+faiss-cpu==1.10.0
+PyMuPDF==1.26.4
+sentence-transformers==5.1.1
 groq>=0.30,<1
-sentence-transformers>=5.1,<6
-faiss-cpu>=1.9,<2
-PyMuPDF>=1.26,<2
-numpy>=2,<3
