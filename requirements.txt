@@ -1,8 +1,6 @@
-streamlit==1.50.0
-numpy==1.26.4
-torch==2.10.0
-transformers==5.0.0
-sentence-transformers==5.1.2
-faiss-cpu==1.10.0
-PyMuPDF==1.26.4
+streamlit==1.64.0
+numpy>=1.26,<3
+sentence-transformers==6.1.0
+faiss-cpu==1.15.1
+PyMuPDF==1.27.2.2
 groq==1.7.0
